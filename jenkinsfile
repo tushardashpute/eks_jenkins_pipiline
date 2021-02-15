@@ -1,0 +1,52 @@
+pipeline {
+    agent any
+	environment {
+		registry = 'tushardashpute/springboohello:latest'
+		registryCredentials = 'docker_credentials'
+		dockerImage = ''
+	}
+    stages {
+        stage ('SCM') {
+            steps {
+                checkout([$class: 'GitSCM', 
+                	branches: [[name: '*/main']], doGenerateSubmoduleConfigurations: false, 
+                	extensions: [], 
+                	submoduleCfg: [], 
+                	userRemoteConfigs: [[url: 'https://github.com/Naresh240/springbootCICD-demo.git']]])
+            }
+        }
+        stage ('Build Artifact') {
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage ('Build Docker Image') {
+            steps {
+                script {
+                    dockerImage = docker.build registry
+                }
+            }
+        }
+        stage ('Docker Push') {
+            steps {
+                script {
+                    docker.withRegistry('',registryCredentials) {
+                        dockerImage.push()
+                    }
+                }
+            }
+        }
+        stage("Deploy"){
+            steps{
+                echo "Current workspace is $WORKSPACE"
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_configure', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    withCredentials([kubeconfigFile(credentialsId: 'kube-credentials', variable: 'KUBECONFIG')]) {
+                    sh '''sudo kubectl apply -f deployment.yml 
+                          sudo kubectl apply -f service.yml
+                    '''
+                    }
+                }
+            }
+        }
+    }
+}
